@@ -394,6 +394,7 @@ PicoClaw는 `model_list` 설정을 통해 30개 이상의 LLM 프로바이더를
 | [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | 필수 | Claude Opus 4.6, Sonnet 4.6 등 |
 | [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | 필수 | Gemini 3 Flash, 2.5 Pro 등 |
 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | 필수 | 200개 이상의 모델, 통합 API |
+| [LLMTR](https://llmtr.com) | `llmtr/` | 필수 | OpenAI 호환 게이트웨이 |
 | [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | 필수 | GLM-4.7, GLM-5 등 |
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | 필수 | DeepSeek-V3, DeepSeek-R1 |
 | [Volcengine](https://console.volcengine.com) | `volcengine/` | 필수 | Doubao, Ark 모델 |

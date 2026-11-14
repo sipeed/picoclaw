@@ -393,6 +393,7 @@ PicoClaw supporta 30+ provider LLM tramite la configurazione `model_list`. Usa i
 | [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | Richiesta | Claude Opus 4.6, Sonnet 4.6, ecc. |
 | [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | Richiesta | Gemini 3 Flash, 2.5 Pro, ecc. |
 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | Richiesta | 200+ modelli, API unificata |
+| [LLMTR](https://llmtr.com) | `llmtr/` | Richiesta | Gateway compatibile con OpenAI |
 | [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | Richiesta | GLM-4.7, GLM-5, ecc. |
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | Richiesta | DeepSeek-V3, DeepSeek-R1 |
 | [Volcengine](https://console.volcengine.com) | `volcengine/` | Richiesta | Doubao, modelli Ark |

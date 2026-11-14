@@ -388,6 +388,7 @@ PicoClaw menyokong 30+ penyedia LLM melalui konfigurasi `model_list`. Gunakan fo
 | [Anthropic](https://console.anthropic.com/settings/keys) | `anthropic/` | Diperlukan | Claude Opus 4.6, Sonnet 4.6, dll. |
 | [Google Gemini](https://aistudio.google.com/apikey) | `gemini/` | Diperlukan | Gemini 3 Flash, 2.5 Pro, dll. |
 | [OpenRouter](https://openrouter.ai/keys) | `openrouter/` | Diperlukan | 200+ model, API bersatu |
+| [LLMTR](https://llmtr.com) | `llmtr/` | Diperlukan | Getlalin serasi OpenAI |
 | [Zhipu (GLM)](https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys) | `zhipu/` | Diperlukan | GLM-4.7, GLM-5, dll. |
 | [DeepSeek](https://platform.deepseek.com/api_keys) | `deepseek/` | Diperlukan | DeepSeek-V3, DeepSeek-R1 |
 | [Volcengine](https://console.volcengine.com) | `volcengine/` | Diperlukan | Doubao, model Ark |

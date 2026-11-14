@@ -162,6 +162,9 @@ func DefaultConfig() *Config {
 				APIBase:   "https://openrouter.ai/api/v1",
 			},
 
+			// LLMTR is an OpenAI-compatible gateway at https://llmtr.com/v1.
+			// Pin a catalog model ID in model_list; this file does not ship one.
+
 			// NVIDIA - https://build.nvidia.com/
 			{
 				ModelName: "nemotron-4-340b",
