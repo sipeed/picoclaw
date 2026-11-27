@@ -4,6 +4,7 @@ import {
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   useRef,
+  useState,
 } from "react"
 import { useTranslation } from "react-i18next"
 import TextareaAutosize from "react-textarea-autosize"
@@ -26,9 +27,7 @@ export type ChatInputDisabledReason =
   | "noDefaultModel"
 
 interface ChatComposerProps {
-  input: string
   attachments: ChatAttachment[]
-  onInputChange: (value: string) => void
   onAddImages: () => void
   onPaste: (event: ReactClipboardEvent<HTMLTextAreaElement>) => void
   onDragEnter: (event: ReactDragEvent<HTMLDivElement>) => void
@@ -36,18 +35,15 @@ interface ChatComposerProps {
   onDragOver: (event: ReactDragEvent<HTMLDivElement>) => void
   onDrop: (event: ReactDragEvent<HTMLDivElement>) => void
   onRemoveAttachment: (index: number) => void
-  onSend: () => void
-  onContextDetail?: () => void
+  onSend: (input: string) => boolean
+  onContextDetail?: () => boolean
   inputDisabledReason: ChatInputDisabledReason | null
-  canSend: boolean
   isDragActive: boolean
   contextUsage?: ContextUsage
 }
 
 export function ChatComposer({
-  input,
   attachments,
-  onInputChange,
   onAddImages,
   onPaste,
   onDragEnter,
@@ -58,19 +54,32 @@ export function ChatComposer({
   onSend,
   onContextDetail,
   inputDisabledReason,
-  canSend,
   isDragActive,
   contextUsage,
 }: ChatComposerProps) {
   const { t } = useTranslation()
+  const [input, setInput] = useState("")
   const canInput = inputDisabledReason === null
   const composingRef = useRef(false)
   const hasInput = input.trim().length > 0
+  const canSend = canInput && (hasInput || attachments.length > 0)
   const disabledMessage =
     inputDisabledReason === null
       ? null
       : t(`chat.disabledPlaceholder.${inputDisabledReason}`)
   const placeholder = disabledMessage ?? t("chat.placeholder")
+
+  const handleSend = () => {
+    if (canSend && onSend(input)) {
+      setInput("")
+    }
+  }
+
+  const handleContextDetail = () => {
+    if (onContextDetail?.()) {
+      setInput("")
+    }
+  }
 
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     const nativeEvent = e.nativeEvent as Event & {
@@ -86,7 +95,7 @@ export function ChatComposer({
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      onSend()
+      handleSend()
     }
   }
 
@@ -139,7 +148,7 @@ export function ChatComposer({
 
           <TextareaAutosize
             value={input}
-            onChange={(e) => onInputChange(e.target.value)}
+            onChange={(e) => setInput(e.target.value)}
             onCompositionStart={() => {
               composingRef.current = true
             }}
@@ -179,7 +188,9 @@ export function ChatComposer({
               {contextUsage && (
                 <ContextUsageRing
                   usage={contextUsage}
-                  onDetailClick={onContextDetail}
+                  onDetailClick={
+                    onContextDetail ? handleContextDetail : undefined
+                  }
                 />
               )}
               {canInput ? (
@@ -188,7 +199,7 @@ export function ChatComposer({
                     type="button"
                     size="icon"
                     className="size-8 rounded-full bg-violet-500 text-white transition-transform hover:bg-violet-600 active:scale-95"
-                    onClick={onSend}
+                    onClick={handleSend}
                     disabled={!canSend}
                     aria-label={t("chat.sendMessage")}
                   >

@@ -107,7 +107,6 @@ export function ChatPage() {
   const dragDepthRef = useRef(0)
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasScrolled, setHasScrolled] = useState(false)
-  const [input, setInput] = useState("")
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [isDragActive, setIsDragActive] = useState(false)
   const [assistantDetailVisibility, setAssistantDetailVisibility] = useAtom(
@@ -190,17 +189,12 @@ export function ChatPage() {
     }
   }, [messages, isTyping, isAtBottom])
 
-  const handleSend = () => {
-    if ((!input.trim() && attachments.length === 0) || !canInput) return
-    if (
-      sendMessage({
-        content: input,
-        attachments,
-      })
-    ) {
-      setInput("")
+  const handleSend = (input: string) => {
+    const sent = sendMessage({ content: input, attachments })
+    if (sent) {
       setAttachments([])
     }
+    return sent
   }
 
   const handleAddImages = () => {
@@ -305,9 +299,6 @@ export function ChatPage() {
 
     await appendImageFiles(files)
   }
-
-  const canSubmit =
-    canInput && (Boolean(input.trim()) || attachments.length > 0)
 
   return (
     <div className="bg-background/95 flex h-full flex-col">
@@ -440,9 +431,7 @@ export function ChatPage() {
       />
 
       <ChatComposer
-        input={input}
         attachments={attachments}
-        onInputChange={setInput}
         onAddImages={handleAddImages}
         onPaste={handleComposerPaste}
         onDragEnter={handleComposerDragEnter}
@@ -451,13 +440,10 @@ export function ChatPage() {
         onDrop={handleComposerDrop}
         onRemoveAttachment={handleRemoveAttachment}
         onSend={handleSend}
-        onContextDetail={() => {
-          if (sendMessage({ content: "/context", attachments: [] })) {
-            setInput("")
-          }
-        }}
+        onContextDetail={() =>
+          sendMessage({ content: "/context", attachments: [] })
+        }
         inputDisabledReason={inputDisabledReason}
-        canSend={canSubmit}
         isDragActive={isDragActive}
         contextUsage={contextUsage}
       />
